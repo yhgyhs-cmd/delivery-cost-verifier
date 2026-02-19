@@ -1,12 +1,13 @@
 import pandas as pd
-import math
+import numpy as np
 import os
+import math
 
-# Configuration
-# Configuration
-RATE_FILE = 'data/운송요금_운임표.xlsx'
-DATA_DIR = 'data'
-RESULTS_DIR = 'results'
+# === 설정 ===
+# 사용자 요청에 따라 데이터 경로 변경 (2025-02-19)
+DATA_DIR = r'C:\Users\yunh1\OneDrive - Thermo Fisher Scientific\비용 검증 프로그램\택배'
+RESULTS_DIR = 'results' # (사용 안함)
+RATE_FILE = os.path.join(DATA_DIR, '운송요금_운임표.xlsx')
 
 def load_rate_table(file_path=RATE_FILE):
     """Parses the rate table to extract bracket limits and prices."""
@@ -35,11 +36,32 @@ def load_rate_table(file_path=RATE_FILE):
                 
     return sorted(rate_map, key=lambda x: x['limit'])
 
-def calculate_expected_cost(weight, address, rate_map):
-    """Calculates expected cost based on weight and address."""
+def calculate_expected_cost(weight, address, rate_map, sender_address=None):
+    """Calculates expected cost based on weight and address.
+    
+    If address (receiver) is a logistics center (Incheon Jung-gu),
+    use sender_address to determine if it's Jeju/Remote.
+    """
     # 1. Determine Region
-    is_jeju = '제주' in str(address)
+    target_address = str(address)
+    region_source = "Receiver"
+    
+    # Check if receiver is logistics center (Incheon Jung-gu)
+    # Remove spaces for robust matching
+    target_addr_clean = target_address.replace(' ', '')
+    if '인천' in target_addr_clean and '중구' in target_addr_clean and sender_address:
+        print(f"DEBUG: Logistics Center Detected. Receiver: {target_address}, Sender: {sender_address}")
+        target_address = str(sender_address)
+        region_source = "Sender (Return)"
+    else:
+        if '인천' in target_address:
+            print(f"DEBUG: Incheon detected but criteria not met. Addr: {target_address}, Sender: {bool(sender_address)}")
+
+    is_jeju = '제주' in target_address
     region_type = '제주' if is_jeju else '전국'
+    if region_source == "Sender (Return)":
+        region_type += " (반품)"
+        print(f"DEBUG: Region set to Return. Type: {region_type}")
     
     # 2. Base Cost Calculation
     base_cost = 0
