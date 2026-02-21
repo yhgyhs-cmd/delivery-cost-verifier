@@ -9,6 +9,12 @@ DATA_DIR = r'C:\Users\yunh1\OneDrive - Thermo Fisher Scientific\비용 검증 �
 RESULTS_DIR = 'results' # (사용 안함)
 RATE_FILE = os.path.join(DATA_DIR, '운송요금_운임표.xlsx')
 
+DEBUG_LOG = False
+
+def _debug(message):
+    if DEBUG_LOG:
+        print(message)
+
 def load_rate_table(file_path=RATE_FILE):
     """Parses the rate table to extract bracket limits and prices."""
     # Load with header at row 1 (0-indexed)
@@ -50,18 +56,18 @@ def calculate_expected_cost(weight, address, rate_map, sender_address=None):
     # Remove spaces for robust matching
     target_addr_clean = target_address.replace(' ', '')
     if '인천' in target_addr_clean and '중구' in target_addr_clean and sender_address:
-        print(f"DEBUG: Logistics Center Detected. Receiver: {target_address}, Sender: {sender_address}")
+        _debug(f"DEBUG: Logistics Center Detected. Receiver: {target_address}, Sender: {sender_address}")
         target_address = str(sender_address)
         region_source = "Sender (Return)"
     else:
         if '인천' in target_address:
-            print(f"DEBUG: Incheon detected but criteria not met. Addr: {target_address}, Sender: {bool(sender_address)}")
+            _debug(f"DEBUG: Incheon detected but criteria not met. Addr: {target_address}, Sender: {bool(sender_address)}")
 
     is_jeju = '제주' in target_address
     region_type = '제주' if is_jeju else '전국'
     if region_source == "Sender (Return)":
         region_type += " (반품)"
-        print(f"DEBUG: Region set to Return. Type: {region_type}")
+        _debug(f"DEBUG: Region set to Return. Type: {region_type}")
     
     # 2. Base Cost Calculation
     base_cost = 0

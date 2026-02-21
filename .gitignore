@@ -41,3 +41,8 @@ Thumbs.db
 data/
 results/
 *.xlsx
+
+# Runtime files
+.streamlit_background.pid
+streamlit_background.out.log
+streamlit_background.err.log

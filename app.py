@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import pandas as pd
 import io
 import os
@@ -12,6 +12,40 @@ st.set_page_config(page_title="배송비 검증 시스템", layout="wide")
 st.title("🚀 배송비 자동 검증 시스템")
 
 # 공통 결과 표시 함수
+def ensure_entity_folder_structure(data_dir, entities):
+    structure = {}
+    for entity in entities:
+        entity_root = os.path.join(data_dir, entity)
+        input_dir = os.path.join(entity_root, "input")
+        output_dir = os.path.join(entity_root, "output")
+        verified_dir = os.path.join(entity_root, "verified")
+
+        os.makedirs(input_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(verified_dir, exist_ok=True)
+
+        structure[entity] = {
+            "root": entity_root,
+            "input": input_dir,
+            "output": output_dir,
+            "verified": verified_dir,
+        }
+    return structure
+
+def build_unique_target_path(directory, filename):
+    target_path = os.path.join(directory, filename)
+    if not os.path.exists(target_path):
+        return target_path
+
+    name, ext = os.path.splitext(filename)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    candidate = os.path.join(directory, f"{name}_{timestamp}{ext}")
+    suffix = 1
+    while os.path.exists(candidate):
+        candidate = os.path.join(directory, f"{name}_{timestamp}_{suffix}{ext}")
+        suffix += 1
+    return candidate
+
 def display_verification_results(final_df):
     col_actual_cost = '발송금액'
     
@@ -34,7 +68,7 @@ def display_verification_results(final_df):
                 existing_cols = mismatch_df.columns.tolist()
             
             st.dataframe(
-                mismatch_df[existing_cols].style.applymap(
+                mismatch_df[existing_cols].style.map(
                     lambda v: 'color: red; font-weight: bold;', subset=[c for c in ['차액', '결과'] if c in existing_cols]
                 ).format("{:,}원", subset=[c for c in ['발송금액', '예상운임', '차액'] if c in existing_cols])
             )
@@ -66,7 +100,7 @@ def display_verification_results(final_df):
     cols_to_display = [col for col in display_df.columns if col not in ['수취주소_원본', '발송주소_원본']] # 너무 긴 컬럼 제외 가능
     
     st.dataframe(
-        display_df.style.applymap(
+        display_df.style.map(
             lambda v: 'color: red; font-weight: bold;' if v == "❌ 불일치" else ('color: green; font-weight: bold;' if v == "✅ 일치" else ''),
             subset=['결과']
         ).format("{:,}원", subset=[col for col in [col_actual_cost, '예상운임', '차액'] if col in display_df.columns])
@@ -196,23 +230,23 @@ def verification_page():
     entity_options = ["TFSS", "TFSK", "FSK"]
     selected_entity = st.sidebar.radio("법인 선택", entity_options, horizontal=True, key="verify_entity_radio")
 
-    # 입력 방식: 서버 폴더에서 파일 선택 (단일 방식)
-    # DATA_DIR 하위에 법인 폴더가 있다고 가정
-    folder_path = os.path.join(DATA_DIR, selected_entity)
-    if not os.path.exists(folder_path):
-        try:
-            os.makedirs(folder_path) # 폴더가 없으면 생성
-        except:
-            pass
-    
-    # [UI 개선] 현재 작업 경로 명시
-    st.sidebar.info(f"📂 **파일 위치 확인**\n\n`{folder_path}`\n\n위 폴더에 있는 파일을 수정하셔야 반영됩니다.")
+    folder_map = ensure_entity_folder_structure(DATA_DIR, entity_options)
+    selected_paths = folder_map[selected_entity]
+    input_dir = selected_paths["input"]
+    output_dir = selected_paths["output"]
+    verified_dir = selected_paths["verified"]
+
+    st.sidebar.info(
+        f"Input: `{input_dir}`\n\n"
+        f"Output: `{output_dir}`\n\n"
+        f"Verified: `{verified_dir}`"
+    )
 
     selected_files = []
     
-    if os.path.exists(folder_path):
-        files = [f for f in os.listdir(folder_path) if f.endswith('.xlsx') and not f.startswith('~$')]
-        files.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
+    if os.path.exists(input_dir):
+        files = [f for f in os.listdir(input_dir) if f.endswith('.xlsx') and not f.startswith('~$')]
+        files.sort(key=lambda x: os.path.getmtime(os.path.join(input_dir, x)), reverse=True)
         
         # 검증 모드 선택 (단일 vs 다중)
         is_multi_mode = st.sidebar.checkbox("일괄 처리 모드 (여러 파일 한번에)", value=False)
@@ -239,7 +273,7 @@ def verification_page():
     
     if not files:
         st.sidebar.warning(f"'{selected_entity}' 폴더에 엑셀 파일이 없습니다.")
-        st.sidebar.caption(f"파일을 아래 경로에 넣어주세요:\n{folder_path}")
+        st.sidebar.caption(f"파일을 아래 경로에 넣어주세요:\n{input_dir}")
     elif selected_files:
         st.sidebar.info(f"{len(selected_files)}개 파일 선택됨")
 
@@ -272,7 +306,7 @@ def verification_page():
             
             for i, selected_filename in enumerate(selected_files):
                 status_text.text(f"처리 중 ({i+1}/{len(selected_files)}): {selected_filename}")
-                selected_file_path = os.path.join(folder_path, selected_filename)
+                selected_file_path = os.path.join(input_dir, selected_filename)
                 
                 # ✅ [수정] RESULTS_DIR 기반 중복 감지 로직 삭제
                 # 이전 로직은 '(2025 10)' in '(2025 10_1)' 처럼 문자열 포함 관계로
@@ -332,23 +366,16 @@ def verification_page():
                     st.session_state['current_file_path'] = None # 저장된 경로가 없으므로 None
                     
                     # === 파일 이동 로직 (Verified 폴더) ===
-                    verified_dir = os.path.join(folder_path, "verified")
-                    if not os.path.exists(verified_dir):
-                        os.makedirs(verified_dir)
-                    
-                    target_path = os.path.join(verified_dir, selected_filename)
-                    
-                    # 중복 파일명 처리
-                    if os.path.exists(target_path):
-                        name, ext = os.path.splitext(selected_filename)
-                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                        target_path = os.path.join(verified_dir, f"{name}_{timestamp}{ext}")
-                    
+                    verified_target_path = build_unique_target_path(verified_dir, f"verified_{selected_filename}")
+                    output_target_path = build_unique_target_path(output_dir, selected_filename)
+
                     try:
-                        shutil.move(selected_file_path, target_path)
+                        final_df.to_excel(verified_target_path, index=False)
+                        shutil.move(selected_file_path, output_target_path)
                         moved_count += 1
                     except Exception as e:
-                        st.error(f"❌ 파일 이동 실패: {e}")
+                        st.error(f"파일 저장 또는 이동 실패: {e}")
+                        fail_count += 1
                         
                 except Exception as e:
                     st.error(f"❌ [{selected_filename}] 처리 중 오류: {e}")
@@ -370,7 +397,7 @@ def verification_page():
     st.sidebar.divider()
     st.sidebar.header("📜 완료된 이력 (Verified)")
     
-    verified_dir = os.path.join(folder_path, "verified")
+    # verified_dir is already resolved by selected entity folder structure
     if os.path.exists(verified_dir):
         verified_files = [f for f in os.listdir(verified_dir) if f.endswith('.xlsx')]
         verified_files.sort(key=lambda x: os.path.getmtime(os.path.join(verified_dir, x)), reverse=True)
@@ -439,3 +466,4 @@ if 'verification_result' in st.session_state and st.session_state['verification_
     if 'current_file_name' in st.session_state:
         st.subheader(f"📊 현재 보기: {st.session_state['current_file_name']}")
     display_verification_results(st.session_state['verification_result'])
+
